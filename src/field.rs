@@ -1,11 +1,20 @@
-#![allow(dead_code)]
 use rand::Rng;
+
 use std::fmt::Display;
 
 #[derive(Clone, Copy, Debug)]
 struct Tile {
     has_mine: bool,
     status: TileStatus,
+}
+
+impl Tile {
+    fn new() -> Tile {
+        Tile {
+            has_mine: false,
+            status: TileStatus::Unknown,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,23 +36,24 @@ impl Display for Tile {
 }
 
 #[derive(Debug)]
-pub struct Field<const NY: usize, const NX: usize> {
-    tiles: [[Tile; NX]; NY],
+pub struct Field {
+    tiles: Vec<Vec<Tile>>,
+    rows: usize,
+    columns: usize,
 }
 
-impl<const NY: usize, const NX: usize> Field<NY, NX> {
-    pub fn new() -> Self {
+impl Field {
+    pub fn new(rows: usize, columns: usize) -> Self {
         let mut rng = rand::rng();
-        let mut mines_left = rng.random_range(NY * NX / 6..NY * NX / 4);
+        let mut mines_left = rng.random_range(rows * columns / 6..rows * columns / 4);
         let mut field = Field {
-            tiles: [[Tile {
-                has_mine: false,
-                status: TileStatus::Unknown,
-            }; NX]; NY],
+            tiles: vec![vec![Tile::new(); columns]; rows],
+            rows,
+            columns,
         };
 
         while mines_left > 0 {
-            let (y, x) = (rng.random_range(0..NY), rng.random_range(0..NX));
+            let (y, x) = (rng.random_range(0..rows), rng.random_range(0..columns));
             if field.tiles[y][x].has_mine {
                 continue;
             }
@@ -61,8 +71,8 @@ impl<const NY: usize, const NX: usize> Field<NY, NX> {
             for dx in -1..=1 {
                 if let Some(new_y) = y.checked_add_signed(dy)
                     && let Some(new_x) = x.checked_add_signed(dx)
-                    && new_y < NY
-                    && new_x < NX
+                    && new_y < self.rows
+                    && new_x < self.columns
                     && self.tiles[new_y][new_x].has_mine
                 {
                     count += 1;
@@ -73,17 +83,13 @@ impl<const NY: usize, const NX: usize> Field<NY, NX> {
         count
     }
 
-    fn get_tile(&self, y: usize, x: usize) -> Option<&Tile> {
-        if y >= NY || x >= NX {
-            None
-        } else {
-            Some(&self.tiles[y][x])
-        }
+    fn is_within_bounds(&self, y: usize, x: usize) -> bool {
+        y < self.rows && x < self.columns
     }
 
-    pub fn reveal(&mut self) {
-        for y in 0..NY {
-            for x in 0..NX {
+    pub fn reveal_all(&mut self) {
+        for y in 0..self.rows {
+            for x in 0..self.columns {
                 if self.tiles[y][x].has_mine {
                     self.tiles[y][x].status = TileStatus::Flagged;
                 } else {
@@ -92,13 +98,24 @@ impl<const NY: usize, const NX: usize> Field<NY, NX> {
             }
         }
     }
+
+    pub fn check_tile(&mut self, y: usize, x: usize) -> &'static str {
+        if !self.is_within_bounds(y, x) {
+            "(Out of bounds) "
+        } else if let TileStatus::Open(..) = self.tiles[y][x].status {
+            "(Already open) "
+        } else {
+            self.tiles[y][x].status = TileStatus::Open(self.count_neigbours(y, x));
+            ""
+        }
+    }
 }
 
-impl<const NY: usize, const NX: usize> Display for Field<NY, NX> {
+impl Display for Field {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if NX > 9 {
+        if self.columns > 9 {
             let mut columns_tens = "  ".to_string();
-            for i in 1..=NX as u32 {
+            for i in 1..=self.columns as u32 {
                 columns_tens.push(char::from_digit(i / 10, 10).unwrap());
                 columns_tens.push(' ');
             }
@@ -106,21 +123,21 @@ impl<const NY: usize, const NX: usize> Display for Field<NY, NX> {
         }
 
         let mut columns_units = "  ".to_string();
-        for i in 1..=NX as u32 {
+        for i in 1..=self.columns as u32 {
             columns_units.push(char::from_digit(i % 10, 10).unwrap());
             columns_units.push(' ');
         }
         writeln!(f, "{columns_units}")?;
 
-        let horizontal_line = format!("-{}", "+-".repeat(NX - 1));
+        let horizontal_line = format!("-{}", "+-".repeat(self.columns - 1));
 
-        for y in 0..NY {
+        for y in 0..self.rows {
             write!(f, "{} ", (b'a' + y as u8) as char)?;
-            for x in 0..NX - 1 {
+            for x in 0..self.columns - 1 {
                 write!(f, "{}|", self.tiles[y][x])?;
             }
-            write!(f, "{}", self.tiles[y][NX - 1])?;
-            if y != NY - 1 {
+            write!(f, "{}", self.tiles[y][self.columns - 1])?;
+            if y != self.rows - 1 {
                 writeln!(f, "\n  {}", horizontal_line)?;
             }
         }
