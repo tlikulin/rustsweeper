@@ -2,18 +2,31 @@
 mod commands;
 mod field;
 
-use commands::Command;
+use commands::{Command, CommandResult};
 use field::Field;
 
 use std::io::{self, Write};
 
 fn main() -> io::Result<()> {
     let mut field = Field::new(5, 20);
-    let mut extra_message = "";
+    let mut last_result = CommandResult::None;
 
     loop {
         println!("{field}");
-        print!("{extra_message}Your turn: ");
+
+        match last_result {
+            CommandResult::AlreadyFlagged => print!("(flagged - can't dig) "),
+            CommandResult::AlreadyOpen => print!("(already open) "),
+            CommandResult::BadCommand => print!("[bad command/coords] "),
+            CommandResult::OutOfBounds => print!("[out of bounds] "),
+            CommandResult::Revealed | CommandResult::None => (),
+            CommandResult::Boom => {
+                println!("BOOM!");
+                return Ok(());
+            }
+        }
+
+        print!("Your turn: ");
         io::stdout().flush()?;
 
         let mut input = String::new();
@@ -24,11 +37,11 @@ fn main() -> io::Result<()> {
                     println!();
                     return Ok(());
                 }
-                Command::Check(y, x) => extra_message = field.check_tile(y, x),
-                Command::Flag(..) => extra_message = "",
+                Command::Dig(y, x) => last_result = field.dig_tile(y, x),
+                Command::Flag(..) => (),
             }
         } else {
-            extra_message = "[Unkown command] ";
+            last_result = CommandResult::BadCommand;
         }
     }
 }

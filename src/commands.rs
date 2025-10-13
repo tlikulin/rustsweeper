@@ -3,7 +3,7 @@ use std::str::FromStr;
 #[derive(Debug)]
 pub enum Command {
     Exit,
-    Check(usize, usize),
+    Dig(usize, usize),
     Flag(usize, usize),
 }
 
@@ -28,7 +28,7 @@ impl FromStr for Command {
         if let Some((cmd, coord)) = s.split_once(|c: char| c.is_ascii_whitespace()) {
             if let Some((y, x)) = parse_coord(coord) {
                 match cmd {
-                    "check" | "c" => Ok(Command::Check(y, x)),
+                    "dig" | "d" => Ok(Command::Dig(y, x)),
                     "flag" | "f" => Ok(Command::Flag(y, x)),
                     _ => Err(CommandParseError::UnknownCommand),
                 }
@@ -58,4 +58,14 @@ fn parse_coord(s: &str) -> Option<(usize, usize)> {
     };
 
     Some((row, column))
+}
+
+pub enum CommandResult {
+    Revealed,
+    OutOfBounds,
+    AlreadyOpen,
+    AlreadyFlagged,
+    Boom,
+    BadCommand,
+    None,
 }

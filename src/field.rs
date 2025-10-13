@@ -1,3 +1,5 @@
+use crate::commands::CommandResult;
+
 use rand::Rng;
 
 use std::fmt::Display;
@@ -15,6 +17,10 @@ impl Tile {
             status: TileStatus::Unknown,
         }
     }
+
+    fn is_open(&self) -> bool {
+        matches!(self.status, TileStatus::Open(..))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -22,6 +28,7 @@ enum TileStatus {
     Unknown,
     Open(u8),
     Flagged,
+    Exploded,
 }
 
 impl Display for Tile {
@@ -31,6 +38,7 @@ impl Display for Tile {
             TileStatus::Open(0) => write!(f, " "),
             TileStatus::Open(num) => write!(f, "{num}"),
             TileStatus::Flagged => write!(f, "X"),
+            TileStatus::Exploded => write!(f, "!"),
         }
     }
 }
@@ -65,22 +73,34 @@ impl Field {
         field
     }
 
-    fn count_neigbours(&self, y: usize, x: usize) -> u8 {
-        let mut count = 0;
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                if let Some(new_y) = y.checked_add_signed(dy)
-                    && let Some(new_x) = x.checked_add_signed(dx)
-                    && new_y < self.rows
-                    && new_x < self.columns
-                    && self.tiles[new_y][new_x].has_mine
-                {
-                    count += 1;
-                }
+    fn get_neigbours_coords(&self, y: usize, x: usize) -> Vec<(usize, usize)> {
+        let mut neigbours = Vec::new();
+        for (dy, dx) in [
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+            (1, 0),
+            (1, -1),
+            (0, -1),
+        ] {
+            if let Some(new_y) = y.checked_add_signed(dy)
+                && let Some(new_x) = x.checked_add_signed(dx)
+                && new_y < self.rows
+                && new_x < self.columns
+            {
+                neigbours.push((new_y, new_x));
             }
         }
+        neigbours
+    }
 
-        count
+    fn count_neigbouring_mines(&self, y: usize, x: usize) -> u8 {
+        self.get_neigbours_coords(y, x)
+            .into_iter()
+            .filter(|&(y, x)| self.tiles[y][x].has_mine)
+            .count() as u8
     }
 
     fn is_within_bounds(&self, y: usize, x: usize) -> bool {
@@ -93,20 +113,44 @@ impl Field {
                 if self.tiles[y][x].has_mine {
                     self.tiles[y][x].status = TileStatus::Flagged;
                 } else {
-                    self.tiles[y][x].status = TileStatus::Open(self.count_neigbours(y, x));
+                    self.tiles[y][x].status = TileStatus::Open(self.count_neigbouring_mines(y, x));
                 }
             }
         }
     }
 
-    pub fn check_tile(&mut self, y: usize, x: usize) -> &'static str {
+    pub fn dig_tile(&mut self, y: usize, x: usize) -> CommandResult {
         if !self.is_within_bounds(y, x) {
-            "(Out of bounds) "
-        } else if let TileStatus::Open(..) = self.tiles[y][x].status {
-            "(Already open) "
+            CommandResult::OutOfBounds
         } else {
-            self.tiles[y][x].status = TileStatus::Open(self.count_neigbours(y, x));
-            ""
+            match self.tiles[y][x].status {
+                TileStatus::Open(_) => CommandResult::AlreadyOpen,
+                TileStatus::Flagged => CommandResult::AlreadyFlagged,
+                TileStatus::Unknown if self.tiles[y][x].has_mine => {
+                    self.tiles[y][x].status = TileStatus::Exploded;
+                    CommandResult::Boom
+                }
+                TileStatus::Exploded => CommandResult::Boom,
+                TileStatus::Unknown => {
+                    self.chain_reveal(y, x);
+                    CommandResult::Revealed
+                }
+            }
+        }
+    }
+
+    fn chain_reveal(&mut self, y: usize, x: usize) {
+        if self.tiles[y][x].is_open() {
+            return;
+        }
+
+        let neighbours = self.count_neigbouring_mines(y, x);
+        self.tiles[y][x].status = TileStatus::Open(neighbours);
+
+        if neighbours == 0 {
+            for (ny, nx) in self.get_neigbours_coords(y, x) {
+                self.chain_reveal(ny, nx);
+            }
         }
     }
 }
